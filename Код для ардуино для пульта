@@ -6,9 +6,7 @@
 #include <VirtualWire.h>
 #include <Servo.h>
 
-// Настройка режима (раскомментируй нужную строку)
 #define MODE "TRANSMITTER"
-// #define MODE "RECEIVER"
 
 // Общие настройки
 #if MODE == "TRANSMITTER"
