@@ -1,0 +1,84 @@
+import cv2
+import numpy as np
+
+# Настройки камеры
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
+
+# Калибровочные параметры (подставьте свои!)
+KNOWN_WIDTH = 0.5  # Ширина препятствия в метрах (например, буй или борт)
+FOCAL_LENGTH = 800  # Фокусное расстояние в пикселях (калибруется!)
+
+# Инициализация камеры
+camera = cv2.VideoCapture(0)
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+
+def estimate_distance(pixel_width):
+    """Оценка расстояния до объекта по его ширине в пикселях."""
+    if pixel_width == 0:
+        return float('inf')  # Чтобы избежать деления на 0
+    return (KNOWN_WIDTH * FOCAL_LENGTH) / pixel_width
+
+def draw_arrow(image, direction):
+    """Рисует стрелку направления движения."""
+    h, w = image.shape[:2]
+    if direction == "F":
+        cv2.arrowedLine(image, (w // 2, h), (w // 2, h // 2), (0, 255, 0), 5)
+    elif direction == "L":
+        cv2.arrowedLine(image, (w, h // 2), (w // 2, h // 2), (0, 255, 0), 5)
+    elif direction == "R":
+        cv2.arrowedLine(image, (0, h // 2), (w // 2, h // 2), (0, 255, 0), 5)
+    elif direction == "S":
+        cv2.putText(image, "STOP", (w // 4, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
+def process_frame(frame):
+    """Обработка кадра: поиск препятствий и оценка расстояния."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    command = "F"  # По умолчанию двигаемся вперед
+    distance = float('inf')
+
+    if contours:
+        biggest_contour = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(biggest_contour)
+        distance = estimate_distance(w)
+
+        # Рисуем прямоугольник и выводим расстояние
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.putText(frame, f"{distance:.2f}m", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Логика управления
+        if distance < 1.0:  # Если ближе 1 метра
+            cX = x + w // 2
+            command = "L" if cX < CAMERA_WIDTH // 2 else "R"  # Поворот
+        elif distance < 2.0:  # Если ближе 2 метров
+            command = "S"  # Остановка
+        else:
+            command = "F"  # Вперед
+
+    # Рисуем стрелку направления
+    draw_arrow(frame, command)
+    
+    # Выводим команду в консоль
+    print(f"Команда: {command}, Расстояние: {distance:.2f}m")
+
+    return frame
+
+while True:
+    ret, frame = camera.read()
+    if not ret:
+        print("Не удалось получить кадр с камеры.")
+        break
+
+    processed_frame = process_frame(frame)
+    cv2.imshow("Управление лодкой (без Arduino)", processed_frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+camera.release()
+cv2.destroyAllWindows()
